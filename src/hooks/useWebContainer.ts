@@ -27,19 +27,19 @@ export const useAppWebContainer = () => {
       setIsBooting(true);
       logToTerminal('Booting WebContainer...', 'info');
       try {
-        const wc = await WebContainer.boot();
+        const wc = await WebContainer.boot(); // Default boot options are used
         setWebContainer(wc);
         logToTerminal('WebContainer booted successfully.', 'info');
-
+  
         wc.on('server-ready', (port, url) => {
           logToTerminal(`Server ready at ${url} on port ${port}`, 'info');
           setPreviewUrl(url);
         });
-
+  
         wc.on('error', (error) => {
           logToTerminal(`WebContainer error: ${error.message}`, 'error');
         });
-         wc.on('preview-message', (msg) => {
+        wc.on('preview-message', (msg) => {
           logToTerminal(`Preview Iframe: ${JSON.stringify(msg)}`, 'info');
         });
       } catch (err) {
@@ -49,12 +49,13 @@ export const useAppWebContainer = () => {
       }
     };
     boot();
-
+  
     return () => {
+      logToTerminal('Tearing down WebContainer instance.', 'info'); // Added a log for confirmation
       webContainer?.teardown?.();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Boot once
+  }, [logToTerminal]); 
 
   const mountFiles = useCallback(async (files: FileSystemTree) => {
     if (!webContainer) {
