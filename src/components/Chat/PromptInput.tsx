@@ -17,7 +17,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useRef, useState } from "react";
 import { useGlobalContext } from "../../providers";
 
-export const PromptInput = () => {
+export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => {
   const { askLLM } = useGlobalContext();
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -28,7 +28,8 @@ export const PromptInput = () => {
   const handleSubmit = () => {
     if (value.trim()) {
       console.log("Submitted:", value);
-      askLLM(value)
+      onSubmit(value.trim())
+      // askLLM(value)
       setValue("");
     }
   };
