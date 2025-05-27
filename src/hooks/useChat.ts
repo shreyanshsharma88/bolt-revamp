@@ -15,33 +15,30 @@ export const useChatService = ({
   onStreamEnd,
   onStreamError,
 }: ChatServiceOptions) => {
+  const cookies = document.cookie
   const mutation = useMutation<
     string, // On success, we might return the full concatenated text or a success message
     Error,
     ChatRequestBody
   >({
     mutationFn: async (body: ChatRequestBody) => {
+      // FIX 1: Add http:// protocol to the Axios URL
       const response = await axios.post("http://localhost:5174/api/chat", body, {
         responseType: "stream",
-        // Axios stream handling is a bit different from fetch's EventSource
-        // We need to manually read the stream.
         onDownloadProgress: (progressEvent) => {
           // console.log("Progress event:", progressEvent.event.currentTarget.responseText);
-          // This gives you access to the streamed data as it arrives
-          // The challenge is that progressEvent.event.currentTarget.responseText accumulates
-          // We need to process only the new part.
-          // For a more robust SSE client with Axios, you might need a library or more complex setup.
-          // The Fetch API with EventSource is often easier for SSE.
-          // Let's adapt to use Fetch API for streaming part for simplicity with SSE.
         },
         withCredentials: true, // Ensure cookies are sent if needed
+        headers:{
+          "Cookie": cookies, // Include cookies in the request if needed
+        }
       });
 
       // ---- SIMPLIFIED STREAM HANDLING USING FETCH FOR SSE ----
       // Axios is great for many things, but raw fetch is often easier for SSE text/event-stream.
-      // If you must use Axios for everything, you'd need a more elaborate onDownloadProgress parser.
 
-      const fetchResponse = await fetch(`${"localhost:5174/api"}/chat`, {
+      // FIX 2: Add http:// protocol to the Fetch API URL
+      const fetchResponse = await fetch(`http://localhost:5174/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

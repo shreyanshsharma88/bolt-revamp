@@ -85,14 +85,22 @@ interface Usage {
   export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system'; // System messages might be added by backend
-    content: string;
+    content: {
+      type: string,
+      text: string
+    }[];
   }
   
   export interface ChatRequestBody {
+    id: string;
     messages: Message[];
     files?: Record<string, { code: string }>; // Or a more complex FileMap if needed
     promptId?: string;
     contextOptimization?: boolean;
+    apiKeys :{
+      AmazonBedrock: "";
+      OpenRouter: "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"
+    }
   }
   
   export interface StreamedData {
