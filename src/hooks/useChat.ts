@@ -21,7 +21,7 @@ export const useChatService = ({
     ChatRequestBody
   >({
     mutationFn: async (body: ChatRequestBody) => {
-      const response = await axios.post("localhost:5174/api/chat", body, {
+      const response = await axios.post("http://localhost:5174/api/chat", body, {
         responseType: "stream",
         // Axios stream handling is a bit different from fetch's EventSource
         // We need to manually read the stream.

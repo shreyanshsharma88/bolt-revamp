@@ -7,13 +7,15 @@ export interface AppWebContainerOutput {
   message: (message: string) => void;
 }
 
-
 export const useAppWebContainer = () => {
   const [webContainer, setWebContainer] = useState<WebContainer | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
   const [isBooting, setIsBooting] = useState(true);
   const [currentProcess, setCurrentProcess] = useState<WebContainerProcess | null>(null);
+
+  // Add this ref to track if WebContainer has been booted
+  const hasBooted = useRef(false);
 
   const logToTerminal = useCallback((message: string, type: 'log' | 'error' | 'info' = 'log') => {
     const prefix = type === 'error' ? 'WC_ERROR:' : type === 'info' ? 'WC_INFO:' : 'WC_LOG:';
@@ -24,38 +26,46 @@ export const useAppWebContainer = () => {
 
   useEffect(() => {
     const boot = async () => {
+      // Prevent multiple boots in StrictMode or on quick re-renders
+      if (hasBooted.current) {
+        logToTerminal('WebContainer already attempting to boot or has booted, skipping this call.', 'info');
+        return;
+      }
+      hasBooted.current = true; // Set flag to true as boot is initiated
+
       setIsBooting(true);
       logToTerminal('Booting WebContainer...', 'info');
       try {
-        const wc = await WebContainer.boot(); // Default boot options are used
+        const wc = await WebContainer.boot();
         setWebContainer(wc);
         logToTerminal('WebContainer booted successfully.', 'info');
-  
+
         wc.on('server-ready', (port, url) => {
           logToTerminal(`Server ready at ${url} on port ${port}`, 'info');
           setPreviewUrl(url);
         });
-  
+
         wc.on('error', (error) => {
           logToTerminal(`WebContainer error: ${error.message}`, 'error');
         });
-        wc.on('preview-message', (msg) => {
+         wc.on('preview-message', (msg) => {
           logToTerminal(`Preview Iframe: ${JSON.stringify(msg)}`, 'info');
         });
       } catch (err) {
         logToTerminal(`Failed to boot WebContainer: ${err instanceof Error ? err.message : String(err)}`, 'error');
+        hasBooted.current = false; // Reset flag if boot fails
       } finally {
         setIsBooting(false);
       }
     };
     boot();
-  
+
     return () => {
-      logToTerminal('Tearing down WebContainer instance.', 'info'); // Added a log for confirmation
       webContainer?.teardown?.();
+      hasBooted.current = false; // Reset flag on cleanup
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logToTerminal]); 
+  }, []); // Boot once
 
   const mountFiles = useCallback(async (files: FileSystemTree) => {
     if (!webContainer) {
