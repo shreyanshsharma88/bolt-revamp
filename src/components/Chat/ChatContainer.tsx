@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/components/Chat/ChatContainer.tsx
+// src/components/Chat/ChatContainer.tsx
 import { Alert, Box, Grid, Paper, Stack, Typography } from "@mui/material";
 import { PromptInput } from "./PromptInput";
 import { Loader } from "../LoaderModal";
@@ -15,13 +16,14 @@ import LivePreview from "../Code/LivePreview";
 
 import { v4 as uuidv4 } from 'uuid'; // For chatSessionId
 
-import { parseBoltResponse, type BoltActionCommand } from "../../utils/"; // Ensure boltActionParser.ts is correctly placed
+import { parseBoltResponse, type BoltActionCommand } from "../../utils"; // Ensure boltActionParser.ts is correctly placed
 import { determineCommands } from "../../utils/webContainer"; // This might be simplified or removed later as boltActions are explicit
 
 export const ChatContainer = () => {
   const [chatMessages, setChatMessages] = useState<AppChatMessage[]>([]);
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState<string>('');
-  const [currentAssistantResponseParts, setCurrentAssistantResponseParts] = useState<string[]>([]); // New state to accumulate full raw response parts
+  // We still use currentAssistantResponseParts for live accumulation, but handleStreamEnd will use its argument.
+  const [currentAssistantResponseParts, setCurrentAssistantResponseParts] = useState<string[]>([]); 
 
   const [projectFiles, setProjectFiles] = useState<AppFile[]>([]);
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
@@ -42,14 +44,12 @@ export const ChatContainer = () => {
   } = useAppWebContainer();
 
   const handleStreamChunk = useCallback((data: StreamedData | string) => {
-    // console.log("handleStreamChunk received data:", data); // Add this log to inspect incoming data
+    // console.log("handleStreamChunk received data:", data); // Keep this log for detailed debugging
 
     if (typeof data === "string") {
-      // This branch handles raw string chunks (like '0:"text"')
       setCurrentAssistantMessage((prev) => prev + data);
       setCurrentAssistantResponseParts((prev) => [...prev, data]);
     } else { // data is StreamedData object
-        // Try to find the actual text content within the StreamedData object
         const textFromStreamedData = data.text || data.message || data.summary || data.payload?.content || data.payload?.text || '';
 
         const logMsg = `[STREAM ${data.type.toUpperCase()}]: ${
@@ -61,41 +61,41 @@ export const ChatContainer = () => {
             {
                 id: String(Date.now()) + Math.random(),
                 role: "assistant",
-                content: logMsg, // Keep structured logs in chatMessages
+                content: logMsg,
                 type: data.type as any,
                 data: data.payload,
             },
         ]);
 
-        // CRITICAL FIX: Accumulate the actual AI response text from StreamedData objects
+        // Accumulate the actual AI response text from StreamedData objects
         // This ensures currentAssistantResponseParts gets the full LLM response for parsing.
         // We only want to accumulate actual LLM response text, not just progress/usage updates.
         // Heuristic: If it's not a known non-content type, assume it might be text.
         if (textFromStreamedData && !['progress', 'usage', 'log', 'codeContext', 'chatSummary', 'error'].includes(data.type)) {
-             setCurrentAssistantMessage((prev) => prev + textFromStreamedData); // Add to live display
-             setCurrentAssistantResponseParts((prev) => [...prev, textFromStreamedData]); // Accumulate for full parsing
+             setCurrentAssistantMessage((prev) => prev + textFromStreamedData);
+             setCurrentAssistantResponseParts((prev) => [...prev, textFromStreamedData]);
         }
       }
     },
     [logToTerminal]
   );
 
-  const handleStreamEnd = useCallback(async () => {
-    const fullAssistantResponse = currentAssistantResponseParts.join(''); // Get the complete raw response
-    logToTerminal('Stream ended. Full response length for parsing: ' + fullAssistantResponse.length, 'info');
+  // CRITICAL FIX: handleStreamEnd MUST accept the fullResponse argument from useChatService
+  const handleStreamEnd = useCallback(async (fullResponse: string) => { // <--- ADD fullResponse ARGUMENT HERE
+    logToTerminal('Stream ended. Full response length for parsing: ' + fullResponse.length, 'info'); // Use the argument directly
     
     // Add the full assistant response to chat messages for permanent display
-    if (fullAssistantResponse.trim()) {
+    if (fullResponse.trim()) { // Use the argument directly
         setChatMessages(prev => [
         ...prev,
-        { id: String(Date.now()), role: 'assistant', content: fullAssistantResponse, type: 'text' },
+        { id: String(Date.now()), role: 'assistant', content: fullResponse, type: 'text' }, // Use the argument directly
         ]);
     }
     setCurrentAssistantMessage(''); // Clear live streaming display
     setCurrentAssistantResponseParts([]); // Reset accumulator for next response
 
     // Parse the full response for Bolt actions
-    const parsedArtifacts = parseBoltResponse(fullAssistantResponse); 
+    const parsedArtifacts = parseBoltResponse(fullResponse); // <--- PASS fullResponse ARGUMENT HERE
 
     if (parsedArtifacts.length > 0) {
       logToTerminal(`Found ${parsedArtifacts.length} bolt artifact(s). Processing...`, 'info'); 
@@ -125,7 +125,7 @@ export const ChatContainer = () => {
                 logToTerminal(`Project base path changed to: '${projectBasePath}' from 'cd' command.`, 'info');
               } else {
                 const cwd = projectBasePath ? `./${projectBasePath}` : undefined;
-                await runCommand(parts[0] ?? '', parts.slice(1), `shell: ${parts[0]}`, cwd);
+                await runCommand(parts[0] , parts.slice(1), `shell: ${parts[0]}`, cwd);
               }
             }
           } else if (action.type === 'file' && action.filePath) {
@@ -166,7 +166,7 @@ export const ChatContainer = () => {
 
       if (startCommandAction) {
         const commandContent = startCommandAction.content;
-        const actualCommandToRun = commandContent.split('&&').map((s : any)=> s.trim()).filter((s : any)=> !s.startsWith('cd ')).join(' && '); 
+        const actualCommandToRun = commandContent.split('&&').map(s => s.trim()).filter(s => !s.startsWith('cd ')).join(' && '); 
 
         const parts = actualCommandToRun.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
         if (parts.length > 0) {
@@ -182,7 +182,6 @@ export const ChatContainer = () => {
       logToTerminal("No valid bolt artifacts found in the processed response.", 'info');
     }
   }, [
-    currentAssistantResponseParts, 
     writeFile, 
     runCommand, 
     logToTerminal, 
@@ -191,7 +190,7 @@ export const ChatContainer = () => {
     activeFilePath, 
     setChatMessages,
     setCurrentAssistantMessage,
-  ]);
+  ]); // Removed currentAssistantResponseParts from dependencies as it's not directly used here anymore
 
   const handleStreamError = useCallback((error: Error) => {
     logToTerminal(`Chat stream error: ${error.message}`, 'error');
@@ -204,7 +203,7 @@ export const ChatContainer = () => {
 
   const { sendMessage, isLoading: isChatLoading, error: chatError } = useChatService({
     onStreamChunk: handleStreamChunk,
-    onStreamEnd: handleStreamEnd,
+    onStreamEnd: handleStreamEnd, // This now correctly passes the full response
     onStreamError: handleStreamError,
   });
 
@@ -273,7 +272,7 @@ export const ChatContainer = () => {
     console.log("ChatContainer State Update:", { 
       chatMessages,
       currentAssistantMessage,
-      currentAssistantResponseParts,
+      currentAssistantResponseParts, // Still useful for debugging accumulation
       projectFiles,
       activeFilePath,
       previewUrl,

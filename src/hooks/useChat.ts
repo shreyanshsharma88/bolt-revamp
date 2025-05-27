@@ -71,16 +71,14 @@ export const useChatService = ({
           const parsedItems = parseStreamedBoltData(chunk); // You need to implement parseStreamedBoltData
           parsedItems.forEach((item: any) => {
             if (typeof item === "string") {
-              fullAssistantResponseText += item;
+              fullAssistantResponseText += item; // Accumulates here
               onStreamChunk(item);
             } else {
-              // It's a StreamedData object
               if (item.text) {
-                // Some structured data might also have primary text
-                fullAssistantResponseText += item.text;
+                fullAssistantResponseText += item.text; // Accumulates here
               }
               onStreamChunk(item);
-              lastProcessedData = item; // Keep track of the last structured data
+              lastProcessedData = item;
             }
           });
         }
