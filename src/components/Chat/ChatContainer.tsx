@@ -1,11 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/components/Chat/ChatContainer.tsx
-// src/components/Chat/ChatContainer.tsx
-import { Stack, Typography } from "@mui/material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Stack, Typography, Grid, Paper, Alert, Box } from "@mui/material"; // Keep these for the basic structure provided by user
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppWebContainer, useChatService } from "../../hooks";
 import type { ChatRequestBody, Message, StreamedData } from "../../types";
-import { type AppChatMessage, type AppFile } from "../../utils/webContainer"; // Re-evaluate path for AppFile
+import { type AppChatMessage, type AppFile } from "../../utils/webContainer";
 import CodeEditorComponent from "../Code/CodeEditor";
 import FileExplorer from "../Code/FileExplorer";
 import LivePreview from "../Code/LivePreview";
@@ -14,30 +13,29 @@ import { Loader } from "../LoaderModal";
 import ChatMessages from "./ChatMessages";
 import { PromptInput } from "./PromptInput";
 
-import { v4 as uuidv4 } from "uuid"; // For chatSessionId
+import { v4 as uuidv4 } from "uuid";
 
 import { VITE_OPEN_ROUTER_API_KEY } from "../../constants";
-import { parseBoltResponse, type BoltActionCommand } from "../../utils"; // Ensure boltActionParser.ts is correctly placed
+import { parseBoltResponse, type BoltActionCommand } from "../../utils";
 import { ChatGridContainer } from "./ChatGridContainer";
+// import { ChatGridContainer } from "./ChatGridContainer"; // Removed if not used for basic structure
 
 export const ChatContainer = () => {
   const [chatMessages, setChatMessages] = useState<AppChatMessage[]>([]);
-  const [currentAssistantMessage, setCurrentAssistantMessage] =
-    useState<string>("");
-  // We still use currentAssistantResponseParts for live accumulation, but handleStreamEnd will use its argument.
-  const [currentAssistantResponseParts, setCurrentAssistantResponseParts] =
-    useState<string[]>([]);
+  const [currentAssistantMessage, setCurrentAssistantMessage] = useState<string>("");
+  const [currentAssistantResponseParts, setCurrentAssistantResponseParts] = useState<string[]>([]);
+
+  // FIX: Use refs for mutable accumulation within handleStreamChunk's useCallback
+  const currentAssistantMessageRef = useRef("");
+  const currentAssistantResponsePartsRef = useRef<string[]>([]);
 
   const [projectFiles, setProjectFiles] = useState<AppFile[]>([]);
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
 
-  const [chatSessionId] = useState(uuidv4()); // Unique ID for the chat session
+  const [chatSessionId] = useState(uuidv4());
 
-  const [selectedModel, setSelectedModel] = useState<string>(
-    "agentica-org/deepcoder-14b-preview:free"
-  );
-  const [selectedProvider, setSelectedProvider] =
-    useState<string>("OpenRouter");
+  const [selectedModel, setSelectedModel] = useState<string>("agentica-org/deepcoder-14b-preview:free");
+  const [selectedProvider, setSelectedProvider] = useState<string>("OpenRouter");
 
   const {
     webContainer,
@@ -49,264 +47,205 @@ export const ChatContainer = () => {
     logToTerminal,
   } = useAppWebContainer();
 
+  // FIX: handleStreamChunk - Removed direct setChatMessages from here
   const handleStreamChunk = useCallback(
     (data: StreamedData | string) => {
-      // console.log("handleStreamChunk received data:", data); // Keep this log for detailed debugging
+      // console.log("handleStreamChunk received data:", data); // Keep for debugging
+      // console.log("Type of data:", typeof data); // Keep for debugging
 
       if (typeof data === "string") {
-        setCurrentAssistantMessage((prev) => prev + data);
-        setCurrentAssistantResponseParts((prev) => [...prev, data]);
-      } else {
-        // data is StreamedData object
+        currentAssistantMessageRef.current += data;
+        currentAssistantResponsePartsRef.current.push(data);
+      } else { // data is StreamedData object
         const textFromStreamedData =
-          data.text ||
-          data.message ||
-          data.summary ||
-          data.payload?.content ||
-          data.payload?.text ||
-          "";
+          data.text || data.message || data.summary || data.payload?.content || data.payload?.text || "";
 
         const logMsg = `[STREAM ${data.type.toUpperCase()}]: ${
           textFromStreamedData || JSON.stringify(data.payload)
         }`;
         logToTerminal(logMsg, "info");
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: String(Date.now()) + Math.random(),
-            role: "assistant",
-            content: logMsg,
-            type: data.type as any,
-            data: data.payload,
-          },
-        ]);
+        
+        // CRITICAL FIX: Removed setChatMessages from here.
+        // This was interfering with state updates and prematurely adding logs to chatMessages.
+        // `handleStreamEnd` is now solely responsible for updating `chatMessages` with final structured messages.
 
-        // Accumulate the actual AI response text from StreamedData objects
-        // This ensures currentAssistantResponseParts gets the full LLM response for parsing.
-        // We only want to accumulate actual LLM response text, not just progress/usage updates.
-        // Heuristic: If it's not a known non-content type, assume it might be text.
-        if (
-          textFromStreamedData &&
-          ![
-            "progress",
-            "usage",
-            "log",
-            "codeContext",
-            "chatSummary",
-            "error",
-          ].includes(data.type)
-        ) {
-          setCurrentAssistantMessage((prev) => prev + textFromStreamedData);
-          setCurrentAssistantResponseParts((prev) => [
-            ...prev,
-            textFromStreamedData,
-          ]);
+        if (textFromStreamedData) { 
+          currentAssistantMessageRef.current += textFromStreamedData;
+          currentAssistantResponsePartsRef.current.push(textFromStreamedData);
         }
       }
+      // CRITICAL: Force state updates AFTER updating refs, so components re-render with latest content
+      setCurrentAssistantMessage(currentAssistantMessageRef.current); 
+      setCurrentAssistantResponseParts([...currentAssistantResponsePartsRef.current]); // Create new array reference for reactivity
     },
-    [logToTerminal]
+    [logToTerminal, setCurrentAssistantMessage, setCurrentAssistantResponseParts] // Dependencies for useCallback
   );
 
-  // CRITICAL FIX: handleStreamEnd MUST accept the fullResponse argument from useChatService
+  const generateSimpleId = useCallback(() => uuidv4(), []); 
+
   const handleStreamEnd = useCallback(
     async (fullResponse: string) => {
-      // <--- ADD fullResponse ARGUMENT HERE
-      logToTerminal(
-        "Stream ended. Full response length for parsing: " +
-          fullResponse.length,
-        "info"
-      ); // Use the argument directly
-
-      // Add the full assistant response to chat messages for permanent display
-      if (fullResponse.trim()) {
-        // Use the argument directly
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: String(Date.now()),
-            role: "assistant",
-            content: fullResponse,
-            type: "text",
-          }, // Use the argument directly
-        ]);
-      }
+      logToTerminal('Stream ended. Full response length for parsing: ' + fullResponse.length, 'info'); 
+      
       setCurrentAssistantMessage(""); // Clear live streaming display
       setCurrentAssistantResponseParts([]); // Reset accumulator for next response
+      
+      // Clear refs after use
+      currentAssistantMessageRef.current = "";
+      currentAssistantResponsePartsRef.current = [];
 
-      // Parse the full response for Bolt actions
-      const parsedArtifacts = parseBoltResponse(fullResponse); // <--- PASS fullResponse ARGUMENT HERE
+      const parsedArtifacts = parseBoltResponse(fullResponse); 
 
+      const finalChatMessagesForDisplay: AppChatMessage[] = []; 
+      const allNewFiles: AppFile[] = [];
+      let startCommandAction: BoltActionCommand | null = null;
+      let installNeeded = false;
+      let projectBasePath = "";
+
+      // Step 1: Extract main narrative text from the <assistant_response> tag
+      let assistantNarrativeText = "";
+      const assistantResponseMatch = fullResponse.match(/<assistant_response>([\s\S]*?)<\/assistant_response>/);
+      if (assistantResponseMatch && assistantResponseMatch[1]) {
+          assistantNarrativeText = assistantResponseMatch[1];
+          assistantNarrativeText = assistantNarrativeText
+              .replace(/<boltArtifact[\s\S]*?<\/boltArtifact>/g, '')
+              .replace(/<examples>[\s\S]*?<\/examples>/g, '')
+              .replace(/<pre><code>[\s\S]*?<\/code><\/pre>/g, '') 
+              .replace(/<a[^>]*>([\s\S]*?)<\/a>/g, '$1') 
+              .replace(/<[^>]*>/g, '') 
+              .trim(); 
+          
+          if (assistantNarrativeText) {
+              finalChatMessagesForDisplay.push({
+                  id: generateSimpleId(),
+                  role: 'assistant',
+                  content: assistantNarrativeText,
+                  type: 'text',
+              });
+          }
+      }
+
+
+      // Step 2: Process parsed artifacts and add structured messages and perform WebContainer actions
       if (parsedArtifacts.length > 0) {
-        logToTerminal(
-          `Found ${parsedArtifacts.length} bolt artifact(s). Processing...`,
-          "info"
-        );
-        const allNewFiles: AppFile[] = [];
-        let startCommandAction: BoltActionCommand | null = null;
-        let installNeeded = false;
-        let projectBasePath = "";
-
+        logToTerminal(`Found ${parsedArtifacts.length} bolt artifact(s). Processing...`, 'info'); 
+        
         for (const artifact of parsedArtifacts) {
-          logToTerminal(
-            `Processing artifact: ${
-              artifact.title || artifact.id || "Untitled"
-            }`,
-            "info"
-          );
-          for (const action of artifact.actions) {
-            logToTerminal(
-              `  Action: ${action.type}, Path: ${
-                action.filePath || "N/A"
-              }, Content Preview: ${(action.content || "").substring(
-                0,
-                70
-              )}...`,
-              "info"
-            );
+          if (artifact.title) {
+              finalChatMessagesForDisplay.push({
+                  id: generateSimpleId(),
+                  role: 'assistant',
+                  content: `Project: ${artifact.title}`,
+                  type: 'project_info', 
+              });
+          }
 
-            if (action.type === "shell") {
-              const parts =
-                action.content.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [] as string[];
+          for (const action of artifact.actions) {
+            logToTerminal(`  Action: ${action.type}, Path: ${action.filePath || 'N/A'}, Content Preview: ${(action.content || "").substring(0,70)}...`, "info");
+            
+            if (action.type === 'shell') {
+              const parts = action.content.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [] as string[];
               if (parts.length > 0) {
-                if (
-                  (parts[0] === "npm" &&
-                    (parts[1] === "create-vite-app" ||
-                      parts[1] === "create")) ||
-                  (parts[0] === "npx" && parts[1] === "create-vite-app")
-                ) {
-                  const appNameIndex =
-                    parts.indexOf("create-vite-app") + 1 ||
-                    parts.indexOf("create") + 1;
-                  if (
-                    parts[appNameIndex] &&
-                    !parts[appNameIndex].startsWith("--")
-                  ) {
-                    projectBasePath = parts[appNameIndex].replace(/["']/g, "");
-                    logToTerminal(
-                      `Project base path identified: '${projectBasePath}' from create command.`,
-                      "info"
-                    );
+                if ((parts[0] === 'npm' && (parts[1] === 'create-vite-app' || parts[1] === 'create')) || (parts[0] === 'npx' && parts[1] === 'create-vite-app')) {
+                  const appNameIndex = parts.indexOf("create-vite-app") + 1 || parts.indexOf("create") + 1;
+                  if (parts[appNameIndex] && !parts[appNameIndex].startsWith("--")) {
+                      projectBasePath = parts[appNameIndex].replace(/["']/g, ''); 
+                      logToTerminal(`Project base path identified: '${projectBasePath}' from create command.`, "info");
                   } else {
-                    logToTerminal(
-                      `Could not determine app name from: ${action.content}`,
-                      "info"
-                    );
+                      logToTerminal(`Could not determine app name from: ${action.content}`, "warn");
                   }
-                } else if (parts[0] === "cd" && parts[1]) {
-                  projectBasePath = parts[1].replace(/["']/g, "");
-                  logToTerminal(
-                    `Project base path changed to: '${projectBasePath}' from 'cd' command.`,
-                    "info"
-                  );
+                } else if (parts[0] === 'cd' && parts[1]) {
+                  projectBasePath = parts[1].replace(/["']/g, ''); 
+                  logToTerminal(`Project base path changed to: '${projectBasePath}' from 'cd' command.`, "info");
                 } else {
-                  const cwd = projectBasePath
-                    ? `./${projectBasePath}`
-                    : undefined;
-                  await runCommand(
-                    parts[0],
-                    parts.slice(1),
-                    `shell: ${parts[0]}`,
-                    cwd
-                  );
+                  const cwd = projectBasePath ? `./${projectBasePath}` : undefined;
+                  await runCommand(parts[0] ?? "", parts.slice(1), `shell: ${parts[0]}`, cwd); 
                 }
               }
-            } else if (action.type === "file" && action.filePath) {
+              finalChatMessagesForDisplay.push({ 
+                  id: generateSimpleId(),
+                  role: 'assistant',
+                  content: action.content, 
+                  type: 'command', 
+              });
+            } else if (action.type === 'file' && action.filePath) {
               let finalPath = action.filePath;
-              if (
-                projectBasePath &&
-                !action.filePath.startsWith("/") &&
-                !action.filePath.startsWith(projectBasePath + "/")
-              ) {
+              if (projectBasePath && !action.filePath.startsWith('/') && !action.filePath.startsWith(projectBasePath + '/')) {
                 finalPath = `${projectBasePath}/${action.filePath}`;
               }
               await writeFile(finalPath, action.content);
               allNewFiles.push({ path: finalPath, content: action.content });
-              if (finalPath.endsWith("package.json")) {
+              
+              finalChatMessagesForDisplay.push({ 
+                  id: generateSimpleId(),
+                  role: 'assistant',
+                  content: `File created: ${finalPath}`,
+                  type: 'file_action', 
+              });
+              if (finalPath.endsWith('package.json')) {
                 installNeeded = true;
               }
-            } else if (action.type === "start") {
+            } else if (action.type === 'start') {
               startCommandAction = action;
+              finalChatMessagesForDisplay.push({ 
+                  id: generateSimpleId(),
+                  role: 'assistant',
+                  content: action.content, 
+                  type: 'command', 
+              });
             }
           }
-        }
-
-        if (allNewFiles.length > 0) {
-          setProjectFiles((prev) => {
-            const filesMap = new Map(prev.map((f) => [f.path, f]));
-            allNewFiles.forEach((nf) => filesMap.set(nf.path, nf));
-            const updated = Array.from(filesMap.values());
-            if (
-              updated.length > 0 &&
-              (!activeFilePath ||
-                !updated.find((f) => f.path === activeFilePath))
-            ) {
-              const firstNewFileInProject = updated.find((f) =>
-                allNewFiles.some((newF) => newF.path === f.path)
-              );
-              setActiveFilePath(
-                firstNewFileInProject?.path || updated[0]?.path || null
-              );
-            }
-            return updated;
-          });
-        }
-
-        const effectiveCwd = projectBasePath
-          ? `./${projectBasePath}`
-          : undefined;
-
-        if (installNeeded) {
-          logToTerminal(
-            `Running npm install ${
-              effectiveCwd ? `in ${effectiveCwd}` : "in root"
-            }...`,
-            "info"
-          );
-          await runCommand("npm", ["install"], "npm install", effectiveCwd);
-        }
-
-        if (startCommandAction) {
-          const commandContent = startCommandAction.content;
-          const actualCommandToRun = commandContent
-            .split("&&")
-            .map((s) => s.trim())
-            .filter((s) => !s.startsWith("cd "))
-            .join(" && ");
-
-          const parts =
-            actualCommandToRun.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
-          if (parts.length > 0) {
-            logToTerminal(
-              `Running start command: ${actualCommandToRun} ${
-                effectiveCwd ? `in ${effectiveCwd}` : "in root"
-              }...`,
-              "info"
-            );
-            await runCommand(
-              parts[0] ?? "",
-              parts.slice(1),
-              `start: ${parts[0]}`,
-              effectiveCwd
-            );
-          }
-        }
-        if (
-          allNewFiles.length === 0 &&
-          !startCommandAction &&
-          parsedArtifacts.length > 0
-        ) {
-          logToTerminal(
-            "Artifacts parsed, but no files were written and no start command was found.",
-            "info"
-          );
         }
       } else {
-        logToTerminal(
-          "No valid bolt artifacts found in the processed response.",
-          "info"
-        );
+        logToTerminal("No valid bolt artifacts found in the processed response.", "info");
       }
+
+      // No index.html or main.tsx creation logic here (as requested to scratch for now)
+
+      if (allNewFiles.length > 0) {
+          setProjectFiles(prev => {
+              const filesMap = new Map(prev.map(f => [f.path, f]));
+              allNewFiles.forEach(nf => filesMap.set(nf.path, nf));
+              const updated = Array.from(filesMap.values());
+              if (updated.length > 0 && (!activeFilePath || !updated.find(f=> f.path === activeFilePath))) {
+                  const firstNewFileInProject = updated.find(f => allNewFiles.some(newF => newF.path === f.path));
+                  setActiveFilePath(firstNewFileInProject?.path || updated[0]?.path || null);
+              }
+              return updated;
+          });
+      }
+
+      const effectiveCwd = projectBasePath ? `./${projectBasePath}` : undefined;
+
+      if (installNeeded) {
+          logToTerminal(`Running npm install ${effectiveCwd ? `in ${effectiveCwd}` : "in root"}...`, "info");
+          await runCommand('npm', ['install'], 'npm install', effectiveCwd);
+      }
+
+      if (startCommandAction) {
+          const commandContent = startCommandAction.content;
+          const actualCommandToRun = commandContent.split('&&').map(s => s.trim()).filter(s => !s.startsWith('cd ')).join(' && ');
+
+          const parts = actualCommandToRun.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+          if (parts.length > 0) {
+              logToTerminal(`Running start command: ${actualCommandToRun} ${effectiveCwd ? `in ${effectiveCwd}` : "in root"}...`, "info");
+              await runCommand(parts[0] ?? "", parts.slice(1), `start: ${parts[0]}`, effectiveCwd); 
+          }
+      }
+      if (allNewFiles.length === 0 && !startCommandAction && parsedArtifacts.length > 0) {
+          logToTerminal("Artifacts parsed, but no files were written and no start command was found.", "info");
+      }
+
+      setChatMessages(prev => {
+          const filteredPrevMessages = prev.filter(m => 
+              m.role === 'user' || 
+              (m.type !== 'progress' && m.type !== 'usage' && !m.type?.startsWith('unknown_structured_data'))
+          );
+          return [...filteredPrevMessages, ...finalChatMessagesForDisplay];
+      });
+
     },
+    // Corrected DEPENDENCY ARRAY for useCallback - now complete for all state setters and values
     [
       writeFile,
       runCommand,
@@ -316,8 +255,10 @@ export const ChatContainer = () => {
       activeFilePath,
       setChatMessages,
       setCurrentAssistantMessage,
+      setCurrentAssistantResponseParts, // Added this setter
+      generateSimpleId, 
     ]
-  ); // Removed currentAssistantResponseParts from dependencies as it's not directly used here anymore
+  ); 
 
   const handleStreamError = useCallback(
     (error: Error) => {
@@ -342,11 +283,11 @@ export const ChatContainer = () => {
     error: chatError,
   } = useChatService({
     onStreamChunk: handleStreamChunk,
-    onStreamEnd: handleStreamEnd, // This now correctly passes the full response
+    onStreamEnd: handleStreamEnd,
     onStreamError: handleStreamError,
   });
 
-  const generateSimpleId = () => uuidv4();
+  // const generateSimpleId = useCallback(() => uuidv4(), []); 
 
   const handlePromptSubmit = useCallback(
     (promptText: string) => {
@@ -375,7 +316,7 @@ export const ChatContainer = () => {
       };
       setChatMessages((prev) => [...prev, userAppMessage]);
       setCurrentAssistantMessage("");
-      setCurrentAssistantResponseParts([]); // Reset for new response
+      setCurrentAssistantResponseParts([]); 
 
       const apiMessages: Message[] = [
         {
@@ -422,6 +363,7 @@ export const ChatContainer = () => {
       selectedProvider,
       sendMessage,
       webContainer,
+      generateSimpleId, 
     ]
   );
 
@@ -448,7 +390,7 @@ export const ChatContainer = () => {
     console.log("ChatContainer State Update:", {
       chatMessages,
       currentAssistantMessage,
-      currentAssistantResponseParts, // Still useful for debugging accumulation
+      currentAssistantResponseParts, 
       projectFiles,
       activeFilePath,
       previewUrl,
@@ -461,8 +403,13 @@ export const ChatContainer = () => {
   });
 
   const promptInputComponent = useMemo(
-    () => <PromptInput onSubmit={handlePromptSubmit} />,
-    [handlePromptSubmit]
+    () => (
+      <PromptInput
+        onSubmit={handlePromptSubmit}
+        isLoading={isChatLoading || (isWebContainerBooting && !webContainer)}
+      />
+    ),
+    [handlePromptSubmit, isChatLoading, isWebContainerBooting, webContainer]
   );
 
   const terminalOutputComponent = useMemo(
@@ -482,8 +429,16 @@ export const ChatContainer = () => {
   );
 
   const livePreviewComponent = useMemo(
-    () => <LivePreview url={previewUrl} />,
-    [previewUrl]
+    () => (
+      <LivePreview
+        url={previewUrl}
+        isLoading={
+          (isChatLoading || (isWebContainerBooting && !webContainer)) &&
+          !previewUrl
+        }
+      />
+    ),
+    [previewUrl, isChatLoading, isWebContainerBooting, webContainer]
   );
 
   const fileExplorerComponent = useMemo(
@@ -512,20 +467,15 @@ export const ChatContainer = () => {
   }
 
   return (
-    <Stack
-      alignItems="center"
-      height="90%"
-      justifyContent="center"
-      p={0}
-    >
+    <Stack alignItems="center" height="90%" justifyContent="center" p={0}>
       {chatMessages.length > 0 ? (
         <ChatGridContainer
           ChatMessages={chatMessagesComponent}
-          CodeEditorComponent={codeEditorComponent}
-          FileExplorer={fileExplorerComponent}
-          LivePreview={livePreviewComponent}
-          TerminalOutput={terminalOutputComponent}
           PromptInput={promptInputComponent}
+          FileExplorer={fileExplorerComponent}
+          TerminalOutput={terminalOutputComponent}
+          CodeEditorComponent={codeEditorComponent}
+          LivePreview={livePreviewComponent}
           activeFilePath={activeFilePath}
           chatError={chatError}
         />

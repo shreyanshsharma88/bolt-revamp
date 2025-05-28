@@ -17,7 +17,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useRef, useState } from "react";
 import { useGlobalContext } from "../../providers";
 
-export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => {
+export const PromptInput = ({onSubmit,  isLoading}:{onSubmit : (prompt:string) => void , isLoading: boolean}) => {
   const { askLLM } = useGlobalContext();
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -150,6 +150,7 @@ export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => 
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 onKeyDown={handleKeyPress}
+                disabled={isLoading}
                 placeholder={
                   !isFocused && !value
                     ? "What would you like to create today?"
