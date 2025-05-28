@@ -1,5 +1,6 @@
 export const GROK_API_KEY = import.meta.env.VITE_GROK_KEY || "";
 
+export const VITE_OPEN_ROUTER_API_KEY = import.meta.env.VITE_OPEN_ROUTER_API_KEY || "";
 export const LLM_PAYLOAD_TEMPLATE = {
   provider: {
     getApiKeyLink: "https://console.groq.com/keys",

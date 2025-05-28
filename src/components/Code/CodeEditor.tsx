@@ -1,7 +1,7 @@
-import React, { useRef, useEffect } from 'react';
-import Editor, { type Monaco } from '@monaco-editor/react';
-import { Box } from '@mui/material';
-import { Loader } from '../LoaderModal';
+import React, { useRef, useEffect } from "react";
+import Editor, { type Monaco } from "@monaco-editor/react";
+import { Box } from "@mui/material";
+import { Loader } from "../LoaderModal";
 
 interface CodeEditorProps {
   filePath?: string | null; // Optional, for display or determining language
@@ -25,20 +25,34 @@ const CodeEditorComponent: React.FC<CodeEditorProps> = ({
 
   // Determine language from file path
   const getLanguage = (path?: string | null): string => {
-    if (!path) return 'plaintext';
-    const extension = path.split('.').pop()?.toLowerCase();
+    if (!path) return "plaintext";
+    const extension = path.split(".").pop()?.toLowerCase();
     switch (extension) {
-      case 'js': case 'jsx': return 'javascript';
-      case 'ts': case 'tsx': return 'typescript';
-      case 'json': return 'json';
-      case 'css': return 'css';
-      case 'html': return 'html';
-      case 'md': return 'markdown';
-      case 'py': return 'python';
-      case 'java': return 'java';
-      case 'scss': return 'scss';
-      case 'yaml': case 'yml': return 'yaml';
-      default: return 'plaintext';
+      case "js":
+      case "jsx":
+        return "javascript";
+      case "ts":
+      case "tsx":
+        return "typescript";
+      case "json":
+        return "json";
+      case "css":
+        return "css";
+      case "html":
+        return "html";
+      case "md":
+        return "markdown";
+      case "py":
+        return "python";
+      case "java":
+        return "java";
+      case "scss":
+        return "scss";
+      case "yaml":
+      case "yml":
+        return "yaml";
+      default:
+        return "plaintext";
     }
   };
 
@@ -50,9 +64,17 @@ const CodeEditorComponent: React.FC<CodeEditorProps> = ({
     // but usually the `value` prop handles updates.
   }, [initialContent]);
 
-
   return (
-    <Box sx={{ height: '100%', width: '100%', border: '1px solid rgba(255,255,255,0.12)', borderRadius:1 }}>
+    <Box
+      sx={{
+        height: "100%",
+        width: "100%",
+        ".monaco-editor": {
+          borderColor: "#fff",
+          outlineColor: "transparent",
+        },
+      }}
+    >
       <Editor
         height="100%" // Editor will fill the parent Box
         language={language}
@@ -64,11 +86,11 @@ const CodeEditorComponent: React.FC<CodeEditorProps> = ({
           // editor.updateOptions({ minimap: { enabled: false } });
         }}
         theme="vs-dark" // Matches MUI dark theme preference
-        loading={<Loader  />}
+        loading={<Loader />}
         options={{
           selectOnLineNumbers: true,
           automaticLayout: true, // Important for responsive resizing
-          wordWrap: 'on',
+          wordWrap: "on",
           minimap: { enabled: true },
         }}
       />
