@@ -17,29 +17,31 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useRef, useState } from "react";
 import { useGlobalContext } from "../../providers";
 
-export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => {
+export const PromptInput = ({onSubmit, value, onChange, isLoading}:{
+  onSubmit : (e: React.FormEvent<HTMLFormElement>) => void; // Expects a form event
+  value: string; // The current input value
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void; // The change handler
+  isLoading: boolean; // To disable the submit button
+}) => {
   const { askLLM } = useGlobalContext();
-  const [value, setValue] = useState("");
+  // const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const textFieldRef = useRef(null);
   const theme = useTheme();
 
-  const handleSubmit = () => {
-    if (value.trim()) {
-      console.log("Submitted:", value);
-      onSubmit(value.trim())
-      // askLLM(value)
-      setValue("");
-    }
+  const handleSubmitInternal = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); // Prevent default form submission
+    onSubmit(e); // Call the onSubmit prop with the event
   };
 
   const handleKeyPress = (e: any) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      handleSubmitInternal(e); // Pass the event
     }
   };
+
 
   return (
     <Box
@@ -140,13 +142,13 @@ export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => 
               }}
             />
 
-            <Box sx={{ position: "relative", p: 2.5 }}>
+            < form onSubmit={handleSubmitInternal} style={{ position: "relative"}}>
               <TextField
                 ref={textFieldRef}
                 multiline
                 maxRows={6}
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
+                value={value} // Use value from props
+                onChange={onChange} // Use onChange from props
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 onKeyDown={handleKeyPress}
@@ -231,7 +233,7 @@ export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => 
                           }}
                         >
                           <IconButton
-                            onClick={handleSubmit}
+                            onClick={handleSubmitInternal}
                             disabled={!value.trim()}
                             sx={{
                               background: value.trim()
@@ -332,7 +334,7 @@ export const PromptInput = ({onSubmit}:{onSubmit : (prompt:string) => void}) => 
                   </motion.div>
                 )}
               </AnimatePresence>
-            </Box>
+            </form>
 
             <AnimatePresence>
               {isFocused && (

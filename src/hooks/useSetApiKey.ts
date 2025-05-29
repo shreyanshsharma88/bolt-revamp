@@ -4,7 +4,7 @@ import axios from "axios";
 export const useSetApiKey = () => {};
 
 const fetchGroqModels = async () => {
-  const response = await axios.get("http://localhost:5174/api/models/Groq", {
+  const response = await axios.get("http://localhost:5174/api/models/OpenRouter", {
     headers: {
       Accept: "*/*",
       "Accept-Language": "en-US,en;q=0.9",
