@@ -38,6 +38,39 @@ import { parseBoltResponse, type BoltActionCommand } from "../../utils"; // Ensu
 
 import { ChatGridContainer } from "./ChatGridContainer";
 
+const extractHumanMessage = (eventStream: string): string => {
+  const lines = eventStream.split("\n");
+  let capture = false;
+  let humanMessage = "";
+
+  for (const line of lines) {
+    if (line.startsWith('f:{"messageId"')) {
+      capture = true;
+      continue;
+    }
+
+    if (capture) {
+      if (line.startsWith('0:".\\n\\n"') || line.startsWith('0:".\n\n"')) {
+        break;
+      }
+
+      if (line.startsWith('0:"')) {
+        // Extract content between the quotes
+        const content = line.substring(3, line.length - 1);
+        // Unescape special characters
+        humanMessage += content
+          .replace(/\\n/g, "\n")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\");
+      }
+    }
+  }
+
+  return humanMessage;
+};
+
+// In handleStreamEnd function, use this:
+
 export const ChatContainer = () => {
   // chatMessages will now store the *processed and structured* messages for UI display
 
@@ -83,7 +116,7 @@ export const ChatContainer = () => {
 
   // useChat hook from @vercel/ai - This replaces your custom useChatService
 
-  const { 
+  const {
     messages: vercelMessages, // Raw messages from @vercel/ai (user, assistant, tool, system)
     input, // Current input value in the text area (for PromptInput)
     handleInputChange, // Handler for input changes (for PromptInput)
@@ -93,20 +126,28 @@ export const ChatContainer = () => {
     // append, // Use append for sending new messages with custom body (if not using handleSubmit directly)
     // reload, stop, setMessages etc. are also available from useChat
   } = useChat({
-    api: 'http://localhost:5174/api/chat', // Your backend API endpoint
+    api: "http://localhost:5174/api/chat", // Your backend API endpoint
     initialMessages: [], // Start with empty messages or load from history
-    
+
     // onFinish is called when the stream ends for a message.
     onFinish: (message: VercelChatMessage) => {
       // message.content here is the FULL, accumulated text from the AI
       // This is where we trigger our custom parsing and WebContainer actions.
-      handleStreamEnd(message.content, message.id); 
+      handleStreamEnd(message.content, message.id);
     },
-    
+
     // onError is called if there's a network error or non-2xx response.
     onError: (error: Error) => {
       logToTerminal(`Vercel useChat Error: ${error.message}`, "error");
-      setChatMessages(prev => [...prev, { id: uuidv4(), role: 'assistant', content: `Chat Error: ${error.message}`, type: 'error' }]);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: uuidv4(),
+          role: "assistant",
+          content: `Chat Error: ${error.message}`,
+          type: "error",
+        },
+      ]);
     },
 
     // onStreamData is deprecated in newer versions. Live display is handled by observing `vercelMessages` content changes.
@@ -119,7 +160,9 @@ export const ChatContainer = () => {
 
   useEffect(() => {
     if (isChatLoading) {
-      const lastAssistantMessage = vercelMessages.findLast(m => m.role === 'assistant');
+      const lastAssistantMessage = vercelMessages.findLast(
+        (m) => m.role === "assistant"
+      );
       if (lastAssistantMessage) {
         setCurrentAssistantMessage(lastAssistantMessage.content);
       }
@@ -133,14 +176,19 @@ export const ChatContainer = () => {
   // This useCallback handles all post-stream processing (parsing, file writing, commands, final chat messages)
 
   const handleStreamEnd = useCallback(
-    async (fullResponseContent: string, messageId: string) => { // Receives content and ID from onFinish
-      logToTerminal('Stream ended. Full response content length for parsing: ' + fullResponseContent.length, 'info'); 
-      
+    async (fullResponseContent: string, messageId: string) => {
+      // Receives content and ID from onFinish
+      logToTerminal(
+        "Stream ended. Full response content length for parsing: " +
+          fullResponseContent.length,
+        "info"
+      );
+
       setCurrentAssistantMessage(""); // Clear live streaming display after stream ends
 
       const parsedArtifacts = parseBoltResponse(fullResponseContent); // Parse the complete content
 
-      const finalChatMessagesForDisplay: AppChatMessage[] = []; 
+      const finalChatMessagesForDisplay: AppChatMessage[] = [];
       const allNewFiles: AppFile[] = [];
       let startCommandAction: BoltActionCommand | null = null;
       let installNeeded = false;
@@ -148,99 +196,175 @@ export const ChatContainer = () => {
 
       // Step 1: Extract main narrative text from the <assistant_response> tag
       let assistantNarrativeText = "";
-      const assistantResponseMatch = fullResponseContent.match(/<assistant_response>([\s\S]*?)<\/assistant_response>/);
+      const assistantResponseMatch = fullResponseContent.match(
+        /<assistant_response>([\s\S]*?)<\/assistant_response>/
+      );
+
+      const preambleMatch = fullResponseContent.match(/^([^<]*)/);
+      finalChatMessagesForDisplay.push({
+        id: generateSimpleId(),
+        role: "assistant",
+        content: preambleMatch?.[0].trim() ?? "",
+        type: "text",
+      });
+
+      const postambleMatch = fullResponseContent.match(/[^>]*$/);
+      finalChatMessagesForDisplay.push({
+        id: generateSimpleId(),
+        role: "assistant",
+        content: postambleMatch?.[0].trim() ?? "",
+        type: "text",
+      });
+      
+
+      console.log({
+        fullResponseContent,
+        preambleMatch,
+        postambleMatch,
+        text1: preambleMatch?.[0].trim(),
+        text2: postambleMatch?.[0].trim(),
+        finalChatMessagesForDisplay
+      });
+      setChatMessages(p => [...p , ...finalChatMessagesForDisplay]);
+      // return;
       if (assistantResponseMatch && assistantResponseMatch[1]) {
-          assistantNarrativeText = assistantResponseMatch[1];
-          assistantNarrativeText = assistantNarrativeText
-              .replace(/<boltArtifact[\s\S]*?<\/boltArtifact>/g, '')
-              .replace(/<examples>[\s\S]*?<\/examples>/g, '')
-              .replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, '') 
-              .replace(/<a[^>]*>([\s\S]*?)<\/a>/g, '$1') 
-              .replace(/<[^>]*>/g, '') 
-              .trim(); 
-          
-          if (assistantNarrativeText) {
-              finalChatMessagesForDisplay.push({
-                  id: generateSimpleId(), // New ID for this specific message part
-                  role: 'assistant',
-                  content: assistantNarrativeText,
-                  type: 'text',
-              });
-          }
+        assistantNarrativeText = assistantResponseMatch[1];
+        assistantNarrativeText = assistantNarrativeText
+          .replace(/<boltArtifact[\s\S]*?<\/boltArtifact>/g, "")
+          .replace(/<examples>[\s\S]*?<\/examples>/g, "")
+          .replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, "")
+          .replace(/<a[^>]*>([\s\S]*?)<\/a>/g, "$1")
+          .replace(/<[^>]*>/g, "")
+          .trim();
+
+        if (assistantNarrativeText) {
+          finalChatMessagesForDisplay.push({
+            id: generateSimpleId(), // New ID for this specific message part
+            role: "assistant",
+            content: assistantNarrativeText,
+            type: "text",
+          });
+        }
       }
 
       // Step 2: Process parsed artifacts and add structured messages and perform WebContainer actions
       if (parsedArtifacts.length > 0) {
-        logToTerminal(`Found ${parsedArtifacts.length} bolt artifact(s). Processing...`, 'info'); 
-        
+        logToTerminal(
+          `Found ${parsedArtifacts.length} bolt artifact(s). Processing...`,
+          "info"
+        );
+
         for (const artifact of parsedArtifacts) {
           if (artifact.title) {
-              finalChatMessagesForDisplay.push({
-                  id: generateSimpleId(),
-                  role: 'assistant',
-                  content: `Project: ${artifact.title}`,
-                  type: 'project_info', 
-              });
+            finalChatMessagesForDisplay.push({
+              id: generateSimpleId(),
+              role: "assistant",
+              content: `Project: ${artifact.title}`,
+              type: "project_info",
+            });
           }
 
           for (const action of artifact.actions) {
-            logToTerminal(`  Action: ${action.type}, Path: ${action.filePath || 'N/A'}, Content Preview: ${(action.content || "").substring(0,70)}...`, "info");
-            
-            if (action.type === 'shell') {
-              const parts = action.content.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [] as string[];
+            logToTerminal(
+              `  Action: ${action.type}, Path: ${
+                action.filePath || "N/A"
+              }, Content Preview: ${(action.content || "").substring(
+                0,
+                70
+              )}...`,
+              "info"
+            );
+
+            if (action.type === "shell") {
+              const parts =
+                action.content.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ||
+                ([] as string[]);
               if (parts.length > 0) {
-                if ((parts[0] === 'npm' && (parts[1] === 'create-vite-app' || parts[1] === 'create')) || (parts[0] === 'npx' && parts[1] === 'create-vite-app')) {
-                  const appNameIndex = parts.indexOf("create-vite-app") + 1 || parts.indexOf("create") + 1;
-                  if (parts[appNameIndex] && !parts[appNameIndex].startsWith("--")) {
-                      projectBasePath = parts[appNameIndex].replace(/["']/g, ''); 
-                      logToTerminal(`Project base path identified: '${projectBasePath}' from create command.`, "info");
+                if (
+                  (parts[0] === "npm" &&
+                    (parts[1] === "create-vite-app" ||
+                      parts[1] === "create")) ||
+                  (parts[0] === "npx" && parts[1] === "create-vite-app")
+                ) {
+                  const appNameIndex =
+                    parts.indexOf("create-vite-app") + 1 ||
+                    parts.indexOf("create") + 1;
+                  if (
+                    parts[appNameIndex] &&
+                    !parts[appNameIndex].startsWith("--")
+                  ) {
+                    projectBasePath = parts[appNameIndex].replace(/["']/g, "");
+                    logToTerminal(
+                      `Project base path identified: '${projectBasePath}' from create command.`,
+                      "info"
+                    );
                   } else {
-                      logToTerminal(`Could not determine app name from: ${action.content}`, "warn");
+                    logToTerminal(
+                      `Could not determine app name from: ${action.content}`,
+                      "warn"
+                    );
                   }
-                } else if (parts[0] === 'cd' && parts[1]) {
-                  projectBasePath = parts[1].replace(/["']/g, ''); 
-                  logToTerminal(`Project base path changed to: '${projectBasePath}' from 'cd' command.`, "info");
+                } else if (parts[0] === "cd" && parts[1]) {
+                  projectBasePath = parts[1].replace(/["']/g, "");
+                  logToTerminal(
+                    `Project base path changed to: '${projectBasePath}' from 'cd' command.`,
+                    "info"
+                  );
                 } else {
-                  const cwd = projectBasePath ? `./${projectBasePath}` : undefined;
-                  await runCommand(parts[0] ?? "", parts.slice(1), `shell: ${parts[0]}`, cwd); 
+                  const cwd = projectBasePath
+                    ? `./${projectBasePath}`
+                    : undefined;
+                  await runCommand(
+                    parts[0] ?? "",
+                    parts.slice(1),
+                    `shell: ${parts[0]}`,
+                    cwd
+                  );
                 }
               }
-              finalChatMessagesForDisplay.push({ 
-                  id: generateSimpleId(),
-                  role: 'assistant',
-                  content: action.content, 
-                  type: 'command', 
+              finalChatMessagesForDisplay.push({
+                id: generateSimpleId(),
+                role: "assistant",
+                content: action.content,
+                type: "command",
               });
-            } else if (action.type === 'file' && action.filePath) {
+            } else if (action.type === "file" && action.filePath) {
               let finalPath = action.filePath;
-              if (projectBasePath && !action.filePath.startsWith('/') && !action.filePath.startsWith(projectBasePath + '/')) {
+              if (
+                projectBasePath &&
+                !action.filePath.startsWith("/") &&
+                !action.filePath.startsWith(projectBasePath + "/")
+              ) {
                 finalPath = `${projectBasePath}/${action.filePath}`;
               }
               await writeFile(finalPath, action.content);
               allNewFiles.push({ path: finalPath, content: action.content });
-              
-              finalChatMessagesForDisplay.push({ 
-                  id: generateSimpleId(),
-                  role: 'assistant',
-                  content: `File created: ${finalPath}`,
-                  type: 'file_action', 
+
+              finalChatMessagesForDisplay.push({
+                id: generateSimpleId(),
+                role: "assistant",
+                content: `File created: ${finalPath}`,
+                type: "file_action",
               });
-              if (finalPath.endsWith('package.json')) {
+              if (finalPath.endsWith("package.json")) {
                 installNeeded = true;
               }
-            } else if (action.type === 'start') {
+            } else if (action.type === "start") {
               startCommandAction = action;
-              finalChatMessagesForDisplay.push({ 
-                  id: generateSimpleId(),
-                  role: 'assistant',
-                  content: action.content, 
-                  type: 'command', 
+              finalChatMessagesForDisplay.push({
+                id: generateSimpleId(),
+                role: "assistant",
+                content: action.content,
+                type: "command",
               });
             }
           }
         }
       } else {
-        logToTerminal("No valid bolt artifacts found in the processed response.", "info");
+        logToTerminal(
+          "No valid bolt artifacts found in the processed response.",
+          "info"
+        );
       }
 
       // Keeping index.html and main.tsx creation logic as it's a functional fix for WebContainer project setup
@@ -274,127 +398,180 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       let mainTsxWrittenByLLM = false;
 
       for (const artifact of parsedArtifacts) {
-          for (const action of artifact.actions) {
-              if (action.type === 'file' && action.filePath) {
-                  if (action.filePath.includes('index.html')) {
-                      indexHtmlWrittenByLLM = true;
-                  }
-                  if (action.filePath.includes('src/main.tsx') || action.filePath.includes('src/main.jsx')) { 
-                      mainTsxWrittenByLLM = true;
-                  }
-              }
+        for (const action of artifact.actions) {
+          if (action.type === "file" && action.filePath) {
+            if (action.filePath.includes("index.html")) {
+              indexHtmlWrittenByLLM = true;
+            }
+            if (
+              action.filePath.includes("src/main.tsx") ||
+              action.filePath.includes("src/main.jsx")
+            ) {
+              mainTsxWrittenByLLM = true;
+            }
           }
+        }
       }
 
       if (projectBasePath) {
-          if (!indexHtmlWrittenByLLM) {
-              const indexHtmlPath = `${projectBasePath}/index.html`;
-              await writeFile(indexHtmlPath, defaultIndexHtmlContent);
-              allNewFiles.push({ path: indexHtmlPath, content: defaultIndexHtmlContent });
-              logToTerminal(`Generated default index.html at ${indexHtmlPath}`, "info");
-              finalChatMessagesForDisplay.push({ 
-                  id: generateSimpleId(),
-                  role: 'assistant',
-                  content: `Generated default index.html for the project.`,
-                  type: 'file_action',
-              });
-          }
+        if (!indexHtmlWrittenByLLM) {
+          const indexHtmlPath = `${projectBasePath}/index.html`;
+          await writeFile(indexHtmlPath, defaultIndexHtmlContent);
+          allNewFiles.push({
+            path: indexHtmlPath,
+            content: defaultIndexHtmlContent,
+          });
+          logToTerminal(
+            `Generated default index.html at ${indexHtmlPath}`,
+            "info"
+          );
+          finalChatMessagesForDisplay.push({
+            id: generateSimpleId(),
+            role: "assistant",
+            content: `Generated default index.html for the project.`,
+            type: "file_action",
+          });
+        }
 
-          if (!mainTsxWrittenByLLM) {
-              const mainTsxPath = `${projectBasePath}/src/main.tsx`; 
-              await writeFile(mainTsxPath, defaultMainTsxContent);
-              allNewFiles.push({ path: mainTsxPath, content: defaultMainTsxContent });
-              logToTerminal(`Generated default main.tsx at ${mainTsxPath}`, "info");
-              finalChatMessagesForDisplay.push({ 
-                  id: generateSimpleId(),
-                  role: 'assistant',
-                  content: `Generated default main.tsx for the project.`,
-                  type: 'file_action',
-              });
-          }
+        if (!mainTsxWrittenByLLM) {
+          const mainTsxPath = `${projectBasePath}/src/main.tsx`;
+          await writeFile(mainTsxPath, defaultMainTsxContent);
+          allNewFiles.push({
+            path: mainTsxPath,
+            content: defaultMainTsxContent,
+          });
+          logToTerminal(`Generated default main.tsx at ${mainTsxPath}`, "info");
+          finalChatMessagesForDisplay.push({
+            id: generateSimpleId(),
+            role: "assistant",
+            content: `Generated default main.tsx for the project.`,
+            type: "file_action",
+          });
+        }
       }
 
       if (allNewFiles.length > 0) {
-          setProjectFiles(prev => {
-              const filesMap = new Map(prev.map(f => [f.path, f]));
-              allNewFiles.forEach(nf => filesMap.set(nf.path, nf));
-              const updated = Array.from(filesMap.values());
-              if (updated.length > 0 && (!activeFilePath || !updated.find(f=> f.path === activeFilePath))) {
-                  const firstNewFileInProject = updated.find(f => allNewFiles.some(newF => newF.path === f.path));
-                  setActiveFilePath(firstNewFileInProject?.path || updated[0]?.path || null);
-              }
-              return updated;
-          });
+        setProjectFiles((prev) => {
+          const filesMap = new Map(prev.map((f) => [f.path, f]));
+          allNewFiles.forEach((nf) => filesMap.set(nf.path, nf));
+          const updated = Array.from(filesMap.values());
+          if (
+            updated.length > 0 &&
+            (!activeFilePath || !updated.find((f) => f.path === activeFilePath))
+          ) {
+            const firstNewFileInProject = updated.find((f) =>
+              allNewFiles.some((newF) => newF.path === f.path)
+            );
+            setActiveFilePath(
+              firstNewFileInProject?.path || updated[0]?.path || null
+            );
+          }
+          return updated;
+        });
       }
 
       const effectiveCwd = projectBasePath ? `./${projectBasePath}` : undefined;
 
       if (installNeeded) {
-          logToTerminal(`Running npm install ${effectiveCwd ? `in ${effectiveCwd}` : "in root"}...`, "info");
-          await runCommand('npm', ['install'], 'npm install', effectiveCwd);
+        logToTerminal(
+          `Running npm install ${
+            effectiveCwd ? `in ${effectiveCwd}` : "in root"
+          }...`,
+          "info"
+        );
+        await runCommand("npm", ["install"], "npm install", effectiveCwd);
       }
 
       if (startCommandAction) {
-          const commandContent = startCommandAction.content;
-          const actualCommandToRun = commandContent.split('&&').map(s => s.trim()).filter(s => !s.startsWith('cd ')).join(' && ');
+        const commandContent = startCommandAction.content;
+        const actualCommandToRun = commandContent
+          .split("&&")
+          .map((s) => s.trim())
+          .filter((s) => !s.startsWith("cd "))
+          .join(" && ");
 
-          const parts = actualCommandToRun.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
-          if (parts.length > 0) {
-              logToTerminal(`Running start command: ${actualCommandToRun} ${effectiveCwd ? `in ${effectiveCwd}` : "in root"}...`, "info");
-              await runCommand(parts[0] ?? "", parts.slice(1), `start: ${parts[0]}`, effectiveCwd); 
-          }
+        const parts =
+          actualCommandToRun.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+        if (parts.length > 0) {
+          logToTerminal(
+            `Running start command: ${actualCommandToRun} ${
+              effectiveCwd ? `in ${effectiveCwd}` : "in root"
+            }...`,
+            "info"
+          );
+          await runCommand(
+            parts[0] ?? "",
+            parts.slice(1),
+            `start: ${parts[0]}`,
+            effectiveCwd
+          );
+        }
       }
-      if (allNewFiles.length === 0 && !startCommandAction && parsedArtifacts.length > 0) {
-          logToTerminal("Artifacts parsed, but no files were written and no start command was found.", "info");
+      if (
+        allNewFiles.length === 0 &&
+        !startCommandAction &&
+        parsedArtifacts.length > 0
+      ) {
+        logToTerminal(
+          "Artifacts parsed, but no files were written and no start command was found.",
+          "info"
+        );
       }
 
       // FIX: Update chatMessages state - combine @vercel/ai's messages with processed custom messages
-      setChatMessages(prev => {
-          // Find the Vercel message corresponding to this finished assistant response.
-          // This ensures we get the latest content from useChat's internal accumulation.
-          const vercelFinishedMessage = vercelMessages.find(msg => msg.id === messageId);
-          if (!vercelFinishedMessage) {
-              // This should not happen if onFinish provides a valid message ID
-              logToTerminal(`Error: Finished message with ID ${messageId} not found in vercelMessages.`, 'error');
-              return prev; // Return previous state
+      setChatMessages((prev) => {
+        // Find the Vercel message corresponding to this finished assistant response.
+        // This ensures we get the latest content from useChat's internal accumulation.
+        const vercelFinishedMessage = vercelMessages.find(
+          (msg) => msg.id === messageId
+        );
+        console.log("INSIDE LOG", finalChatMessagesForDisplay);
+        
+        if (!vercelFinishedMessage) {
+          // This should not happen if onFinish provides a valid message ID
+          logToTerminal(
+            `Error: Finished message with ID ${messageId} not found in vercelMessages.`,
+            "error"
+          );
+          return [prev , ...finalChatMessagesForDisplay]; // Return previous state
+        }
+
+        // Map @vercel/ai's finished message to AppChatMessage format
+        const mappedVercelMessage: AppChatMessage = {
+          id: vercelFinishedMessage.id,
+          role: vercelFinishedMessage.role as "user" | "assistant",
+          content: vercelFinishedMessage.content, // Full text content from @vercel/ai
+          type: "text", // Default type for the main text message
+        };
+
+        // Build the new chatMessages array:
+        // 1. All existing user messages.
+        // 2. All existing assistant messages that are NOT the one just finished (to avoid duplication).
+        // 3. The newly completed assistant message (main text).
+        // 4. Any custom structured messages (commands, file actions, project info) from `finalChatMessagesForDisplay`.
+        const newChatHistory: AppChatMessage[] = [];
+
+        // Add previous user messages
+        prev.forEach((msg) => {
+          if (msg.role === "user") {
+            newChatHistory.push(msg);
           }
-          
-          // Map @vercel/ai's finished message to AppChatMessage format
-          const mappedVercelMessage: AppChatMessage = {
-              id: vercelFinishedMessage.id,
-              role: vercelFinishedMessage.role as 'user' | 'assistant',
-              content: vercelFinishedMessage.content, // Full text content from @vercel/ai
-              type: 'text', // Default type for the main text message
-          };
+        });
 
-          // Build the new chatMessages array:
-          // 1. All existing user messages.
-          // 2. All existing assistant messages that are NOT the one just finished (to avoid duplication).
-          // 3. The newly completed assistant message (main text).
-          // 4. Any custom structured messages (commands, file actions, project info) from `finalChatMessagesForDisplay`.
-          const newChatHistory: AppChatMessage[] = [];
+        // Add the newly completed assistant message (main narrative text)
+        newChatHistory.push(mappedVercelMessage);
 
-          // Add previous user messages
-          prev.forEach(msg => {
-              if (msg.role === 'user') {
-                  newChatHistory.push(msg);
-              }
-          });
+        // Add custom structured messages (commands, file actions, project info)
+        // Filter out the main text message if it was already added from parsedArtifacts in some edge case
+        finalChatMessagesForDisplay.forEach((msg) => {
+          if (msg.id !== messageId || msg.type !== "text") {
+            // Avoid duplicating the main text message
+            newChatHistory.push(msg);
+          }
+        });
 
-          // Add the newly completed assistant message (main narrative text)
-          newChatHistory.push(mappedVercelMessage);
-
-          // Add custom structured messages (commands, file actions, project info)
-          // Filter out the main text message if it was already added from parsedArtifacts in some edge case
-          finalChatMessagesForDisplay.forEach(msg => {
-              if (msg.id !== messageId || msg.type !== 'text') { // Avoid duplicating the main text message
-                  newChatHistory.push(msg);
-              }
-          });
-
-          return newChatHistory;
+        return newChatHistory;
       });
-
     },
     // Dependencies for useCallback - essential for correct behavior
     [
@@ -406,10 +583,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       activeFilePath,
       setChatMessages,
       setCurrentAssistantMessage,
-      generateSimpleId, 
-      vercelMessages // CRITICAL: This dependency ensures handleStreamEnd sees the latest vercelMessages
+      generateSimpleId,
+      vercelMessages, // CRITICAL: This dependency ensures handleStreamEnd sees the latest vercelMessages
     ]
-  ); 
+  );
 
   const handleStreamError = useCallback(
     (error: Error) => {
@@ -429,7 +606,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   );
 
   const handlePromptSubmit = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => { // useChat's handleSubmit takes a form event
+    (event: React.FormEvent<HTMLFormElement>) => {
+      // useChat's handleSubmit takes a form event
       event.preventDefault(); // Prevent default form submission
 
       if (!webContainer && !isWebContainerBooting) {
@@ -449,20 +627,20 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         return;
       }
       logToTerminal(`User prompt: ${input}`, "info");
-      
+
       // Add user message to your local chatMessages state immediately for display
       const userMessageForDisplay: AppChatMessage = {
         id: generateSimpleId(), // Use generateSimpleId for consistency
-        role: 'user',
+        role: "user",
         content: input, // Display the original prompt content
-        type: 'text'
+        type: "text",
       };
       setChatMessages((prev) => [...prev, userMessageForDisplay]);
 
       // Construct the message object for @vercel/ai (which will also be sent to backend by `handleSubmit`)
       const messageForAI: VercelChatMessage = {
         id: userMessageForDisplay.id, // Re-use the ID for consistency
-        role: 'user',
+        role: "user",
         content: `[Model: ${selectedModel}]\n\n[Provider: ${selectedProvider}]\n\n${input}`, // Prefix content for backend
       };
 
@@ -490,10 +668,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       };
 
       // Call @vercel/ai's handleSubmit to send the message and custom body
-      handleSubmit(event, { // Pass the event and options object
-          body: customBody, // Pass your custom backend payload here
+      handleSubmit(event, {
+        // Pass the event and options object
+        body: customBody, // Pass your custom backend payload here
       });
-      
+
       // Clear live streaming message and parts for the new response
       setCurrentAssistantMessage("");
     },
@@ -646,7 +825,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ChatMessages
         messages={chatMessages} // Pass local chatMessages state
         streamingMessage={
-          isChatLoading ? (vercelMessages.findLast(m => m.role === 'assistant')?.content || '') : ''
+          isChatLoading
+            ? vercelMessages.findLast((m) => m.role === "assistant")?.content ||
+              ""
+            : ""
         } // Live content from useChat
       />
     ),
