@@ -842,7 +842,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
   return (
     <Stack alignItems="center" height="90%" justifyContent="center" p={0}>
-      {chatMessages.length > 0 ? (
+      {chatMessages.length === 0 ? (
         <ChatGridContainer
           ChatMessages={chatMessagesComponent}
           CodeEditorComponent={codeEditorComponent}

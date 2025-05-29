@@ -9,6 +9,7 @@ import {
   Tooltip,
   Typography,
   type DrawerProps,
+  type PaperProps,
 } from "@mui/material";
 import { useMemo, useState, type JSX } from "react";
 import TerminalAnimation from "../../../public/terminal.json";
@@ -47,6 +48,14 @@ export const ChatGridContainer = ({
         title: "Live Preview",
         content: LivePreview,
         description: "View the live preview of your code",
+        PaperProps: {
+          sx: {
+            width: "45%",
+            background: "#001f3f",
+            boxShadow: "12px 12px 56px #001326, -12px -12px 56px #002b58",
+            height: "100%",
+          },
+        } as PaperProps,
       },
       {
         anchor: "bottom",
@@ -55,6 +64,11 @@ export const ChatGridContainer = ({
         title: "Terminal Logs",
         content: TerminalOutput,
         description: "Logs to help you debug your code",
+        PaperProps: {
+          sx: {
+            height: "50%",
+          },
+        } as PaperProps,
       },
     ],
     [LivePreview, TerminalOutput, showLivePreview, showTerminalLogs]
@@ -146,6 +160,9 @@ export const ChatGridContainer = ({
           key={index}
           anchor={drawer.anchor as DrawerProps["anchor"]}
           open={drawer.open}
+          PaperProps={{
+            ...drawer.PaperProps,
+          }}
         >
           <Box
             sx={{
@@ -177,6 +194,7 @@ export const ChatGridContainer = ({
                 background: "#001f3f",
                 boxShadow: "12px 12px 56px #001326, -12px -12px 56px #002b58",
                 height: "100%",
+                mt:4
               }}
             >
               {drawer.content}
