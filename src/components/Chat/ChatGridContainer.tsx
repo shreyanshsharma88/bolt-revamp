@@ -62,70 +62,85 @@ export const ChatGridContainer = ({
   return (
     <>
       <Stack
-  direction="row"
-  width="100%"
-  height="100vh"
-  justifyContent="space-between"
-  alignItems="flex-end" // aligns animation and icon at bottom
-  p={2} // padding for breathing space
->
-  {/* Left: Lottie Animation */}
-  <Box
-    onClick={() => setShowLivePreview(true)}
-    sx={{ cursor: "pointer" }}
-  >
-    <Lottie
-      animationData={PreviewAnimation}
-      style={{
-        height: 100,
-        width: 100,
-      }}
-    />
-  </Box>
+        direction="row"
+        width="100%"
+        height="100vh"
+        justifyContent="space-between"
+        alignItems="flex-end" // aligns animation and icon at bottom
+        p={2} // padding for breathing space
+      >
+        {/* Left: Lottie Animation */}
+        <Box
+          onClick={() => setShowLivePreview(true)}
+          sx={{ cursor: "pointer" }}
+        >
+          <Lottie
+            animationData={PreviewAnimation}
+            style={{
+              height: 100,
+              width: 100,
+            }}
+          />
+        </Box>
 
-  {/* Center: Main Content */}
-  <Stack
-    direction="row"
-    gap={2}
-    flex={1}
-    height="100%"
-    alignItems="stretch"
-   border='2px solid'
-   borderRadius={1}
-  >
-    {/* Chat Section */}
-    <Stack width="50%" justifyContent="space-between">
-      <Typography textAlign='start' p={2} variant="subtitle1" gutterBottom>
-        Chat
-      </Typography>
-      {ChatMessages}
-      {PromptInput}
-    </Stack>
+        {/* Center: Main Content */}
+        <Stack
+          direction="row"
+          gap={2}
+          flex={1}
+          height="100%"
+          alignItems="stretch"
+          border="2px solid"
+          borderRadius={1}
+        >
+          {/* Chat Section */}
+          <Stack width="50%" justifyContent="space-between">
+            <Typography
+              textAlign="start"
+              p={2}
+              variant="subtitle1"
+              gutterBottom
+            >
+              Chat
+            </Typography>
+            {ChatMessages}
+            {PromptInput}
+          </Stack>
 
-    {/* File Explorer */}
-    <Stack width="20%">
-      <Typography textAlign='start' p={2} variant="subtitle1" gutterBottom>
-        File Explorer
-      </Typography>
-      {FileExplorer}
-    </Stack>
+          {/* File Explorer */}
+          <Stack width="20%">
+            <Typography
+              textAlign="start"
+              p={2}
+              variant="subtitle1"
+              gutterBottom
+            >
+              File Explorer
+            </Typography>
+            {FileExplorer}
+          </Stack>
 
-    {/* Code Editor */}
-    <Stack width="30%">
-      <Typography textAlign='start' p={2} variant="subtitle1" gutterBottom>
-        Code
-      </Typography>
-      {CodeEditorComponent}
-    </Stack>
-  </Stack>
+          {/* Code Editor */}
+          <Stack width="30%">
+            <Typography
+              textAlign="start"
+              p={2}
+              variant="subtitle1"
+              gutterBottom
+            >
+              Code
+            </Typography>
+            {CodeEditorComponent}
+          </Stack>
+        </Stack>
 
-  {/* Right: Terminal Icon */}
-  <Tooltip title="View Terminal Logs">
-    <IconButton onClick={() => setShowTerminalLogs(true)} sx={{ mb: 1 }}>
-      <Terminal sx={{ fontSize: 60 }} color="primary" />
-    </IconButton>
-  </Tooltip>
-</Stack>
+        {/* Right: Terminal Icon */}
+        <Tooltip title="View Terminal Logs">
+          <IconButton onClick={() => setShowTerminalLogs(true)} sx={{ mb: 1 }}>
+            <Terminal sx={{ fontSize: 60 }} color="primary" />
+          </IconButton>
+        </Tooltip>
+      </Stack>
       {Drawers.map((drawer, index) => (
         <Drawer
           key={index}
@@ -134,10 +149,11 @@ export const ChatGridContainer = ({
         >
           <Box
             sx={{
-              width: 400,
+              width: "100%",
               p: 2,
               display: "flex",
               flexDirection: "column",
+              height: "500px",
             }}
           >
             <Stack

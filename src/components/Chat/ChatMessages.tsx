@@ -45,7 +45,7 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
       role === "user"
         ? "primary.main"
         : type === "command"
-        ? "rgba(76, 175, 80, 0.1)"
+        ? "transparent"
         : "background.paper",
     color:
       role === "user"
