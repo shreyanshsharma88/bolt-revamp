@@ -4,7 +4,7 @@ import { Box } from "@mui/material";
 import { Loader } from "../LoaderModal";
 
 interface CodeEditorProps {
-  filePath?: string | null; // Optional, for display or determining language
+  filePath?: string | null; 
   initialContent: string;
   onContentChange: (path: string, newContent: string) => void;
 }

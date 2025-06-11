@@ -13,7 +13,7 @@ export interface AppChatMessage {
     id: string;
     role: 'user' | 'assistant';
     content: string;
-    type?: 'text' | 'log' | 'error' | 'progress' | 'codeContext' | 'chatSummary'; // For styling/handling
+    type?: 'text' | 'log' | 'error' | 'progress' | 'codeContext' | 'chatSummary' | 'command' | 'usage' | 'internal log'; // For styling/handling
     data?: any; // Store structured data if any
   }
   

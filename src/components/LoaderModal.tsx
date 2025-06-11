@@ -18,10 +18,7 @@ export const Loader = () => {
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
       >
-        <Typography variant="h4" width="50%" textAlign="center">
-          A tired LLM model is working its ass off to create your project to
-          perfection
-        </Typography>
+       
         <Box height={350} width={350}>
           <Lottie animationData={LoadingAnimation} />
         </Box>

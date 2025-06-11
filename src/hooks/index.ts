@@ -2,4 +2,5 @@
 export * from './useChat'
 export * from './useLLMcall'
 export * from './useSetApiKey'
+export * from './useTypedText'
 export * from './useWebContainer'

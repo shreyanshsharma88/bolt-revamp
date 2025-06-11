@@ -16,11 +16,19 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { useRef, useState } from "react";
 import { useGlobalContext } from "../../providers";
+import { toast } from "react-toastify";
 
-export const PromptInput = ({onSubmit, value, onChange, isLoading}:{
-  onSubmit : (e: React.FormEvent<HTMLFormElement>) => void; // Expects a form event
+export const PromptInput = ({
+  onSubmit,
+  value,
+  onChange,
+  isLoading,
+}: {
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void; // Expects a form event
   value: string; // The current input value
-  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void; // The change handler
+  onChange: (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => void; // The change handler
   isLoading: boolean; // To disable the submit button
 }) => {
   const { askLLM } = useGlobalContext();
@@ -42,14 +50,13 @@ export const PromptInput = ({onSubmit, value, onChange, isLoading}:{
     }
   };
 
-
   return (
     <Box
       sx={{
         display: "flex",
         justifyContent: "center",
         alignItems: "flex-end",
-        padding: 4,
+        padding: { xs: 0, sm: 4 },
       }}
     >
       <motion.div
@@ -142,7 +149,10 @@ export const PromptInput = ({onSubmit, value, onChange, isLoading}:{
               }}
             />
 
-            < form onSubmit={handleSubmitInternal} style={{ position: "relative"}}>
+            <form
+              onSubmit={handleSubmitInternal}
+              style={{ position: "relative" }}
+            >
               <TextField
                 ref={textFieldRef}
                 multiline
@@ -173,6 +183,9 @@ export const PromptInput = ({onSubmit, value, onChange, isLoading}:{
                         }}
                       >
                         <IconButton
+                          onClick={() =>
+                            toast.error("File upload not implemented yet!")
+                          }
                           size="small"
                           sx={{
                             color: theme.palette.text.secondary,
@@ -204,6 +217,9 @@ export const PromptInput = ({onSubmit, value, onChange, isLoading}:{
                           }}
                         >
                           <IconButton
+                            onClick={() =>
+                              toast.error("Voice input not implemented yet!")
+                            }
                             size="small"
                             sx={{
                               color: "rgba(255,255,255,0.6)",

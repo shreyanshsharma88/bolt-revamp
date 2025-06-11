@@ -1,61 +1,57 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/components/Chat/ChatMessages.tsx
-import React, { useEffect, useRef } from "react";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import {
   Box,
-  Paper,
-  Typography,
   CircularProgress,
-  type SxProps,
-  List,
-  ListItem,
+  Divider,
+  Paper,
+  Typography
 } from "@mui/material";
+import React, { useEffect, useRef } from "react";
 import type { AppChatMessage } from "../../utils/webContainer";
 
 interface ChatMessagesProps {
   messages: AppChatMessage[];
   streamingMessage?: string;
+  createdFiles?: string[]; // new prop
 }
 
 const ChatMessages: React.FC<ChatMessagesProps> = ({
   messages,
   streamingMessage,
+  createdFiles = [],
 }) => {
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Only scroll if the user hasn't scrolled up manually
     const element = endOfMessagesRef.current;
     if (element) {
-      const isScrolledToBottom =
-        element.scrollHeight - element.clientHeight <= element.scrollTop + 1;
-      if (isScrolledToBottom) {
-        element.scrollIntoView({ behavior: "smooth" });
-      }
+      element.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, streamingMessage]);
 
   const getBubbleStyle = (role: "user" | "assistant", type?: string) => ({
-    p: 1.5,
+    px: type === "command" ? 1.2 : 2,
+    py: type === "command" ? 1 : 1.5,
     mb: 1,
-    borderRadius: "10px",
-    maxWidth: "80%",
+    borderRadius: 2,
+    maxWidth: "85%",
     wordWrap: "break-word",
     bgcolor:
       role === "user"
         ? "primary.main"
         : type === "command"
-        ? "transparent"
+        ? "#111"
         : "background.paper",
     color:
       role === "user"
         ? "primary.contrastText"
         : type === "command"
-        ? "#66BB6A"
+        ? "#4CAF50"
         : "text.primary",
     alignSelf: role === "user" ? "flex-end" : "flex-start",
-    boxShadow: 1,
-    border: type === "command" ? "1px solid #4CAF50" : "none",
+    boxShadow: type === "command" ? "0 0 0 1px #333" : 1,
+    fontFamily: type === "command" ? "monospace" : undefined,
   });
 
   return (
@@ -65,11 +61,14 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
         overflowY: "auto",
         display: "flex",
         flexDirection: "column",
-        pr: 0.5,
+        pr: 1,
+        px: 1,
+        "&::-webkit-scrollbar": { display: "none" },
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
       }}
     >
       {messages
-        // Filter out internal structured logs (progress, usage, unknown_structured_data) from displaying in chat
         .filter(
           (msg) =>
             msg.role === "user" ||
@@ -82,76 +81,26 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
           <Paper
             key={msg.id}
             elevation={0}
-            sx={{ ...(getBubbleStyle(msg.role, msg.type) as SxProps) }}
+            sx={{ ...getBubbleStyle(msg.role, msg.type) }}
           >
             <Typography
               variant="body2"
               component="div"
               sx={{ whiteSpace: "pre-wrap" }}
             >
-              {/* Conditionally display type prefix for specific message types */}
-              {msg.type &&
-                ["file_action", "command", "project_info"].includes(
-                  msg.type
-                ) && (
-                  <Typography
-                    variant="caption"
-                    display="block"
-                    sx={{ opacity: 0.7, mb: 0.5 }}
-                  >
-                    [{msg.type.replace(/_/g, " ").toUpperCase()}]
-                  </Typography>
-                )}
-              {/* Display content based on message type */}
-              {msg.type === "file_list" && msg.files && (
-                <Box
-                  sx={{
-                    mt: 1,
-                    p: 1,
-                    backgroundColor: "rgba(0,0,0,0.05)",
-                    borderRadius: 1,
-                  }}
-                >
-                  <Typography
-                    variant="caption"
-                    display="block"
-                    sx={{ opacity: 0.7, mb: 1 }}
-                  >
-                    [FILE LIST]
-                  </Typography>
-                  <List dense sx={{ maxHeight: 200, overflow: "auto" }}>
-                    {msg.files.map((file, index) => (
-                      <ListItem key={index} sx={{ py: 0.5 }}>
-                        <ListItemText
-                          primary={file.path}
-                          primaryTypographyProps={{
-                            variant: "body2",
-                            fontFamily: "monospace",
-                          }}
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
-              )}
               {msg.type === "command" ? (
                 <Box
                   component="pre"
                   sx={{
-                    backgroundColor: "rgba(0,0,0,0.1)",
-                    p: 1,
-                    borderRadius: "5px",
+                    p: 0,
+                    m: 0,
                     overflowX: "auto",
-                    color: "inherit",
+                    fontSize: "0.85rem",
+                    fontFamily: "monospace",
+                    whiteSpace: "pre-wrap",
                   }}
                 >
-                  <Typography
-                    component="code"
-                    variant="body2"
-                    sx={{ color: "inherit" }}
-                  >
-                    $ {msg.content}
-                  </Typography>
+                  $ {msg.content}
                 </Box>
               ) : (
                 msg.content
@@ -159,8 +108,9 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
             </Typography>
           </Paper>
         ))}
+
       {streamingMessage && (
-        <Paper elevation={0} sx={getBubbleStyle("assistant") as SxProps}>
+        <Paper elevation={0} sx={getBubbleStyle("assistant")}>
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <CircularProgress size={16} sx={{ mr: 1 }} />
             <Typography
@@ -173,6 +123,47 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
           </Box>
         </Paper>
       )}
+
+      {createdFiles.length > 0 && (
+        <Box
+          sx={{
+            mt: 2,
+            backgroundColor: "#111",
+            borderRadius: 2,
+            px: 2,
+            py: 1.5,
+            color: "#fff",
+            border: "1px solid #333",
+            boxShadow: "inset 0 0 0 1px #000",
+            fontSize: "0.875rem",
+          }}
+        >
+          <Typography sx={{ fontWeight: 600, mb: 1 }}>
+            Project Created
+          </Typography>
+         
+          <Divider sx={{ backgroundColor: "#333", my: 1 }} />
+          <Box>
+            {createdFiles.map((file, index) => (
+              <Box
+                key={index}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  mb: 0.5,
+                  fontFamily: "monospace",
+                  fontSize: "0.8rem",
+                  color: "#d0ffd0",
+                }}
+              >
+                <CheckCircleIcon sx={{ fontSize: 16, mr: 1, color: "#4CAF50" }} />
+                {file}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+
       <div ref={endOfMessagesRef} />
     </Box>
   );
